@@ -18,6 +18,8 @@ export const useGameStore = defineStore('game', {
     buildings: [],
     animals: [],
     plots: [],
+    weather: null,
+    weatherLog: [],
     selectedPlot: null,
     seedMode: false,
     selectedCropId: null,
@@ -40,12 +42,17 @@ export const useGameStore = defineStore('game', {
       this.buildings = d.buildings
       this.animals = d.animals
       this.plots = d.plots
+      this.weather = d.weather
+      this.weatherLog = d.weatherLog || []
       this.loaded = true
+    },
+    pushLog(msg, type = 'info') {
+      this.timeline.unshift({ msg, type, time: new Date().toLocaleTimeString('zh-CN') })
+      if (this.timeline.length > 30) this.timeline.pop()
     },
     showToast(msg, type = 'info') {
       this.toast = { msg, type, id: Date.now() }
-      this.timeline.unshift({ msg, type, time: new Date().toLocaleTimeString('zh-CN') })
-      if (this.timeline.length > 30) this.timeline.pop()
+      this.pushLog(msg, type)
     },
     clearToast() { this.toast = null },
 
@@ -83,7 +90,23 @@ export const useGameStore = defineStore('game', {
     async nextDay(n = 1) {
       const r = await api('/skip', 'POST', { n })
       await this.load()
+      // 天气逐日结算记录进入事件时间线
+      ;(r.logs || []).forEach((m) => this.pushLog(m, 'warn'))
       this.showToast(`时间 +${n} 天`, 'info')
+    },
+    async protect(gold, matQty) {
+      try {
+        await api('/weather/protect', 'POST', { gold, matQty })
+        await this.load()
+        this.showToast('已投入防护资源', 'success')
+      } catch (e) { this.showToast(e.message, 'warn') }
+    },
+    async buyMat(qty = 1) {
+      try {
+        await api('/buymat', 'POST', { qty })
+        await this.load()
+        this.showToast('已购入防灾物资', 'success')
+      } catch (e) { this.showToast(e.message, 'warn') }
     },
     async buySeed(cropId, qty = 1) {
       try {

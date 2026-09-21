@@ -8,6 +8,9 @@
         <div class="chip lv">Lv.{{ store.player?.level ?? 1 }} ✨{{ store.player?.exp ?? 0 }}exp</div>
         <div class="chip season">{{ store.seasonLabel }}</div>
         <div class="chip day">第 {{ store.player?.day ?? 1 }} 天</div>
+        <div class="chip weather" :class="{bad: store.weather?.bad}" v-if="store.weather">
+          {{ store.weather.icon }} {{ store.weather.name }}<template v-if="store.weather.bad">·剩{{ store.weather.duration - store.weather.settled_days }}天</template>
+        </div>
       </div>
       <div class="time-ctl">
         <button class="skip1" @click="store.nextDay(1)">⏩ +1天</button>
@@ -24,6 +27,7 @@
       </div>
       <aside class="side">
         <PlotPanel />
+        <WeatherPanel />
       </aside>
     </main>
 
@@ -54,6 +58,7 @@ import { ref, onMounted } from 'vue'
 import { useGameStore } from '@/store/game'
 import FarmMap from '@/components/FarmMap.vue'
 import PlotPanel from '@/components/PlotPanel.vue'
+import WeatherPanel from '@/components/WeatherPanel.vue'
 import Management from '@/components/Management.vue'
 const store = useGameStore()
 const tlOpen = ref(false)
@@ -74,6 +79,8 @@ onMounted(async () => {
 .chip{background:#13233f;border:1px solid rgba(120,160,220,0.2);color:#aebadd;padding:5px 11px;border-radius:8px;font-size:12px;}
 .chip.gold{color:#ffd54f;}
 .chip.season{color:#90caf9;}
+.chip.weather{color:#c5e1a5;}
+.chip.weather.bad{color:#ef9a9a;border-color:rgba(239,83,80,0.4);}
 .time-ctl{display:flex;gap:6px;margin-left:auto;}
 .time-ctl button{border:none;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:#fff;font-weight:600;}
 .skip1{background:linear-gradient(135deg,#ffb300,#f57c00);}
@@ -82,7 +89,7 @@ onMounted(async () => {
 .main{display:grid;grid-template-columns:1fr 320px;gap:14px;padding:16px 20px;max-width:1460px;margin:0 auto;}
 @media(max-width:980px){.main{grid-template-columns:1fr;}}
 .map-col{min-width:0;}
-.side{align-self:start;}
+.side{align-self:start;display:flex;flex-direction:column;gap:14px;}
 .guide.card-note{max-width:1200px;margin:14px auto 0;background:#14273f;border:1px dashed #ffd54f;color:#ffd54f;border-radius:10px;padding:12px 16px;font-size:13px;}
 .toast{position:fixed;right:20px;top:70px;z-index:50;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.4);cursor:pointer;max-width:320px;}
 .toast.success{background:#1b5e20;color:#c8e6c9;border:1px solid #388e3c;}

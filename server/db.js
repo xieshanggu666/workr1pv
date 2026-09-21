@@ -72,4 +72,36 @@ CREATE TABLE IF NOT EXISTS animals (
   x INTEGER NOT NULL,
   y INTEGER NOT NULL
 );
+
+-- 天气事件：按季节生成并持久化；防护投入与结算进度都落库
+CREATE TABLE IF NOT EXISTS weather_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season INTEGER NOT NULL,
+  day INTEGER NOT NULL,                  -- 季节内第几天（事件开始日）
+  abs_day INTEGER NOT NULL,              -- 绝对天数（全局递增，结算对齐用）
+  type TEXT NOT NULL,                    -- sunny/rain/drought/storm/frost/heatwave/blizzard/freeze/wind
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  duration INTEGER NOT NULL DEFAULT 1,   -- 持续天数
+  severity INTEGER NOT NULL DEFAULT 0,   -- 0 无害 / 1~3 灾害等级
+  protect_gold INTEGER NOT NULL DEFAULT 0,  -- 已投入防护金币储备
+  protect_mat INTEGER NOT NULL DEFAULT 0,   -- 已投入防护物资储备
+  settled_days INTEGER NOT NULL DEFAULT 0,  -- 已结算天数（防重复扣损）
+  done INTEGER NOT NULL DEFAULT 0
+);
+
+-- 天气逐日结算日志：UNIQUE(event_id, abs_day) 保证同一天只结算一次
+CREATE TABLE IF NOT EXISTS weather_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  abs_day INTEGER NOT NULL,
+  msg TEXT NOT NULL,
+  UNIQUE(event_id, abs_day)
+);
 `)
+
+// 兼容旧存档：player 增加绝对天数（天气结算对齐用）
+const playerCols = db.prepare('PRAGMA table_info(player)').all().map((c) => c.name)
+if (!playerCols.includes('abs_day')) {
+  db.exec('ALTER TABLE player ADD COLUMN abs_day INTEGER NOT NULL DEFAULT 1')
+}

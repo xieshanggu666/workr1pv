@@ -47,6 +47,23 @@ function drawBackground() {
     const py = 60 + ((i * 53) % (H - 80))
     ctx.beginPath(); ctx.arc(px, py, 3, 0, 7); ctx.fill()
   }
+  // 天气氛围
+  const wt = store.weather?.type
+  const tints = {
+    rain: 'rgba(40,80,160,0.15)', storm: 'rgba(20,30,60,0.28)', blizzard: 'rgba(255,255,255,0.35)',
+    freeze: 'rgba(180,210,255,0.25)', frost: 'rgba(200,220,255,0.2)', heatwave: 'rgba(255,120,0,0.12)',
+    drought: 'rgba(255,200,60,0.15)', wind: 'rgba(150,150,150,0.1)'
+  }
+  if (tints[wt]) {
+    ctx.fillStyle = tints[wt]
+    ctx.fillRect(0, 0, W, H)
+  }
+  if (wt && wt !== 'sunny') {
+    ctx.font = '26px serif'
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'top'
+    ctx.fillText(store.weather.icon, W - 12, 8)
+  }
 }
 
 function drawBuildings() {

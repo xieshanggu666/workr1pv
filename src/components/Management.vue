@@ -30,6 +30,20 @@
         <button class="mini green" @click="store.sellCrop(s.cropId,5)">卖5</button>
       </div>
     </div>
+    <div class="pcol card">
+      <h4>🧰 物资商店</h4>
+      <div class="row">
+        <span class="i">🧱</span>
+        <div class="m-info">
+          <b>防灾物资</b>
+          <span class="tag">恶劣天气时投入防护</span>
+          <span class="tag">持有 ×{{ matCount }}</span>
+        </div>
+        <span class="price seed">🪙12</span>
+        <button class="mini" @click="store.buyMat(1)">买</button>
+        <button class="mini" @click="store.buyMat(5)">买×5</button>
+      </div>
+    </div>
   </div>
 
   <!-- 加工坊 -->
@@ -142,8 +156,12 @@ function iconOf(it) {
   if (it.cat === 'crop') return cropIcon.value[it.item_id.split('-')[1]] || '🧺'
   if (it.cat === 'seed') return '🌱'
   if (it.cat === 'product') { return { 'p-chicken': '🥚', 'p-cow': '🥛', 'p-sheep': '🧶' }[it.item_id] || '📦' }
+  if (it.item_id === 'disaster-kit') return '🧱'
   return { flour: '🌾制品', juice: '🧃', cheese: '🧀', wool1: '🧵' }[it.item_id] || '📦'
 }
+const matCount = computed(() =>
+  store.inventory.filter((it) => it.cat === 'material').reduce((s, it) => s + it.qty, 0)
+)
 const mill = computed(() => store.buildings.find((b) => b.name === '加工坊'))
 const barn = computed(() => store.buildings.find((b) => b.name === '畜棚'))
 

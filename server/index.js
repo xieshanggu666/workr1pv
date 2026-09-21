@@ -1,5 +1,6 @@
 import express from 'express'
 import { db } from './db.js'
+import { TYPES, ensureWeather, settleWeather, currentWeather } from './weather.js'
 
 const app = express()
 app.use(express.json())
@@ -30,6 +31,8 @@ function seed() {
     .run('seed-1', '萝卜种子', 'seed', 10)
   db.prepare('INSERT INTO inventory (item_id,name,cat,qty) VALUES (?,?,?,?)')
     .run('gold_seed_5', '小麦种子', 'seed', 5)
+  db.prepare('INSERT INTO inventory (item_id,name,cat,qty) VALUES (?,?,?,?)')
+    .run('disaster-kit', '防灾物资', 'material', 3)
 
   const buildings = [
     ['农舍', 1, 0, 7, '你的家，升级可解锁新功能'],
@@ -47,6 +50,10 @@ const q = (sql, ...p) => db.prepare(sql).all(...p)
 const q1 = (sql, ...p) => db.prepare(sql).get(...p)
 const run = (sql, ...p) => db.prepare(sql).run(...p)
 
+// 启动时确保当天天气已生成（兼容旧存档）
+const p0 = q1('SELECT * FROM player WHERE id=1')
+ensureWeather(p0.season, p0.day, p0.abs_day)
+
 // ===== API =====
 app.get('/api/state', (req, res) => {
   res.json({
@@ -55,7 +62,9 @@ app.get('/api/state', (req, res) => {
     inventory: q('SELECT * FROM inventory'),
     buildings: q('SELECT * FROM buildings'),
     animals: q('SELECT * FROM animals'),
-    plots: q('SELECT * FROM plots')
+    plots: q('SELECT * FROM plots'),
+    weather: currentWeather(),
+    weatherLog: q('SELECT * FROM weather_log ORDER BY id DESC LIMIT 8')
   })
 })
 
@@ -118,14 +127,60 @@ app.post('/api/harvest', (req, res) => {
 
 // 时间推进 1 天
 app.post('/api/nextday', (req, res) => {
-  advanceDay()
-  res.json({ ok: true })
+  const logs = advanceDay()
+  res.json({ ok: true, logs })
 })
 
-// 时间推进为主（快速）
+// 时间推进为主（快速）：连续跳日逐天结算天气防护消耗、损失与恢复
 app.post('/api/skip', (req, res) => {
   const n = Math.min(Number(req.body?.n) || 1, 14)
-  for (let i = 0; i < n; i++) advanceDay()
+  const logs = []
+  for (let i = 0; i < n; i++) logs.push(...advanceDay())
+  res.json({ ok: true, logs })
+})
+
+// 投入金币/物资防灾（作用于当前未结束的天气事件）
+app.post('/api/weather/protect', (req, res) => {
+  const gold = Math.max(0, Math.min(Math.floor(Number(req.body?.gold) || 0), 500))
+  const matQty = Math.max(0, Math.min(Math.floor(Number(req.body?.matQty) || 0), 99))
+  if (!gold && !matQty) return res.status(400).json({ error: '未投入任何资源' })
+  const ev = q1('SELECT * FROM weather_events WHERE done=0 ORDER BY abs_day LIMIT 1')
+  if (!ev || !TYPES[ev.type]?.bad) return res.status(400).json({ error: '当前天气无需防护' })
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const p = q1('SELECT gold FROM player WHERE id=1')
+    if (p.gold < gold) throw Object.assign(new Error('金币不足'), { status: 400 })
+    if (matQty > 0) {
+      const stacks = q("SELECT * FROM inventory WHERE cat='material' AND qty>0 ORDER BY qty DESC")
+      const total = stacks.reduce((s, r) => s + r.qty, 0)
+      if (total < matQty) throw Object.assign(new Error('物资不足'), { status: 400 })
+      let need = matQty
+      for (const s of stacks) {
+        const take = Math.min(need, s.qty)
+        run('UPDATE inventory SET qty=qty-? WHERE id=?', take, s.id)
+        need -= take
+        if (!need) break
+      }
+    }
+    run('UPDATE player SET gold=gold-? WHERE id=1', gold)
+    run('UPDATE weather_events SET protect_gold=protect_gold+?, protect_mat=protect_mat+? WHERE id=?', gold, matQty, ev.id)
+    cleanEmpty()
+    db.exec('COMMIT')
+    res.json({ ok: true, protect_gold: ev.protect_gold + gold, protect_mat: ev.protect_mat + matQty })
+  } catch (e) {
+    try { db.exec('ROLLBACK') } catch { /* 事务可能已结束，忽略 */ }
+    res.status(e.status || 500).json({ error: e.message })
+  }
+})
+
+// 购买防灾物资
+app.post('/api/buymat', (req, res) => {
+  const n = Math.max(1, Math.min(Number(req.body?.qty) || 1, 99))
+  const cost = 12 * n
+  const p = q1('SELECT gold FROM player WHERE id=1')
+  if (p.gold < cost) return res.status(400).json({ error: 'no gold' })
+  run('UPDATE player SET gold=gold-? WHERE id=1', cost)
+  addInv('disaster-kit', '防灾物资', 'material', n)
   res.json({ ok: true })
 })
 
@@ -229,45 +284,69 @@ function cleanEmpty() {
 function isCropGrown(plot, crop) {
   return plot.stage >= (crop.days - 1)
 }
+function clamp100(v) { return Math.max(0, Math.min(100, v)) }
+// 推进 1 天：事务内完成「天气结算 → 地块/动物逐日更新 → 日期推进 → 生成次日天气」，
+// 任一步失败整体回滚，读档或重试不会重复扣损。返回当日天气结算日志。
 function advanceDay() {
-  const p = q1('SELECT * FROM player WHERE id=1')
-  let { day, season } = p
-  day += 1
-  // 更新所有地块：生长 + 四维变化 + 虫害
-  const plots = q('SELECT * FROM plots')
-  for (const pl of plots) {
-    if (!pl.crop_id) continue
-    // 四维消耗
-    const water = Math.max(0, pl.water - (12 + Math.round(Math.random() * 12)))
-    const fert = Math.max(0, pl.fert - (8 + Math.round(Math.random() * 8)))
-    let light = Math.max(0, pl.light - (6 + Math.round(Math.random() * 8)))
-    // 季节光照影响
-    if (season === 3) light = Math.max(0, light - 10)
-    let pest = pl.pest + (Math.random() < 0.25 ? 1 : 0)
-    // 虫害过高会降低属性
-    const flux = water >= 30 && fert >= 30 && light >= 30 && pest <= 0.6
-    const crop = q1('SELECT days FROM crops WHERE id=?', pl.crop_id)
-    const full = pl.stage >= (crop.days - 1)
-    let stage = pl.stage
-    if (!full && flux) stage += 1
-    else if (!full && !flux && pl.stage === 0) {
-      // 条件不良不生长（重长）
+  const logs = []
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const p = q1('SELECT * FROM player WHERE id=1')
+    let { day, season } = p
+    // —— 天气：结算当日事件（防护消耗/损失/恢复按天结算，幂等）——
+    const { mods, logs: wlogs } = settleWeather(p.abs_day)
+    logs.push(...wlogs)
+    day += 1
+    // 更新所有地块：生长 + 四维变化 + 虫害 + 天气修正
+    const plots = q('SELECT * FROM plots')
+    for (const pl of plots) {
+      if (!pl.crop_id) continue
+      // 四维消耗 + 天气修正
+      let water = pl.water - (12 + Math.round(Math.random() * 12)) + mods.waterAdd
+      let fert = pl.fert - (8 + Math.round(Math.random() * 8)) + mods.fertAdd
+      let light = pl.light - (6 + Math.round(Math.random() * 8)) + mods.lightAdd + mods.lightRecover
+      // 季节光照影响
+      if (season === 3) light -= 10
+      // 降雨/暴雨直接灌满
+      if (mods.setWater != null) water = mods.setWater
+      water = clamp100(water); fert = clamp100(fert); light = clamp100(light)
+      let pest = Math.max(0, pl.pest + (Math.random() < 0.25 ? 1 : 0) + mods.pestAdd)
+      // 虫害过高会降低属性；恶劣天气可能阻止生长
+      const flux = water >= 30 && fert >= 30 && light >= 30 && pest <= 0.6 && !mods.growthBlock
+      const crop = q1('SELECT days FROM crops WHERE id=?', pl.crop_id)
+      const full = pl.stage >= (crop.days - 1)
+      let stage = pl.stage
+      if (!full && flux) stage += 1
+      else if (!full && !flux && pl.stage === 0) {
+        // 条件不良不生长（重长）
+      }
+      // 恶劣天气可能打坏作物（倒退一阶段）
+      if (stage > 0 && mods.stageRegressChance > 0 && Math.random() < mods.stageRegressChance) stage -= 1
+      run(`UPDATE plots SET water=?,fert=?,light=?,pest=?,stage=? WHERE id=?`, water, fert, light, pest, stage, pl.id)
     }
-    run(`UPDATE plots SET water=?,fert=?,light=?,pest=?,stage=? WHERE id=?`, water, fert, light, pest, stage, pl.id)
+    // 动物喂食衰减 + 天气伤害/恢复 + 产物就绪
+    const animals = q('SELECT * FROM animals')
+    for (const a of animals) {
+      const feed = Math.max(0, a.feed - 25)
+      let health = a.health - (feed === 0 ? 20 : 6) + mods.animalHpAdd
+      if (feed > 0) health += mods.animalRecover
+      health = Math.max(0, Math.min(100, health))
+      run(`UPDATE animals SET feed=?,health=?,ready=1 WHERE id=?`, feed, health, a.id)
+    }
+    // 天数推进与季节轮转
+    if (day > 28) {
+      day = 1
+      season = (season + 1) % 4
+    }
+    run('UPDATE player SET day=?, season=?, abs_day=abs_day+1 WHERE id=1', day, season)
+    // 生成次日天气（持续中的事件会自然延续）
+    ensureWeather(season, day, p.abs_day + 1)
+    db.exec('COMMIT')
+  } catch (e) {
+    try { db.exec('ROLLBACK') } catch { /* 事务可能已结束，忽略 */ }
+    throw e
   }
-  // 动物喂食衰减 + 产物就绪
-  const animals = q('SELECT * FROM animals')
-  for (const a of animals) {
-    const feed = Math.max(0, a.feed - 25)
-    const health = Math.max(0, a.health - (feed === 0 ? 20 : 6))
-    run(`UPDATE animals SET feed=?,health=?,ready=1 WHERE id=?`, feed, health, a.id)
-  }
-  // 天数推进与季节轮转
-  if (day > 28) {
-    day = 1
-    season = (season + 1) % 4
-  }
-  run('UPDATE player SET day=?, season=? WHERE id=1', day, season)
+  return logs
 }
 
 const PORT = 4110
