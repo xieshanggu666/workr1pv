@@ -18,6 +18,8 @@ export const useGameStore = defineStore('game', {
     buildings: [],
     animals: [],
     plots: [],
+    weather: null,
+    weatherLog: [],
     selectedPlot: null,
     seedMode: false,
     selectedCropId: null,
@@ -40,6 +42,8 @@ export const useGameStore = defineStore('game', {
       this.buildings = d.buildings
       this.animals = d.animals
       this.plots = d.plots
+      this.weather = d.weather
+      this.weatherLog = d.weatherLog || []
       this.loaded = true
     },
     showToast(msg, type = 'info') {
@@ -83,7 +87,29 @@ export const useGameStore = defineStore('game', {
     async nextDay(n = 1) {
       const r = await api('/skip', 'POST', { n })
       await this.load()
-      this.showToast(`时间 +${n} 天`, 'info')
+      // 逐日展示天气结算：防护消耗、损失与恢复
+      for (const d of r.days || []) {
+        const w = d.weather
+        let msg = `第${d.day}天 ${w.icon}${w.name}`
+        if (d.protected) msg += ' 🛡️防护-1天'
+        if (d.effects?.length) msg += '：' + d.effects.join('；')
+        const type = w.kind === 'disaster' ? (d.protected ? 'info' : 'warn') : w.kind === 'good' ? 'success' : 'info'
+        this.showToast(msg, type)
+      }
+    },
+    async buyKit(qty = 1) {
+      try {
+        await api('/buykit', 'POST', { qty })
+        await this.load()
+        this.showToast(`已购入防灾物资 ×${qty}`, 'success')
+      } catch (e) { this.showToast(e.message, 'warn') }
+    },
+    async protect(days = 1) {
+      try {
+        const r = await api('/protect', 'POST', { days })
+        await this.load()
+        this.showToast(`🛡️ 防护 +${r.days} 天（🪙-${r.cost}，物资-${r.days}）`, 'success')
+      } catch (e) { this.showToast(e.message, 'warn') }
     },
     async buySeed(cropId, qty = 1) {
       try {

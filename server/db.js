@@ -72,4 +72,22 @@ CREATE TABLE IF NOT EXISTS animals (
   x INTEGER NOT NULL,
   y INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS weather_events (
+  abs_day INTEGER PRIMARY KEY,           -- 绝对天数：每天唯一，保证不重复生成/结算
+  season INTEGER NOT NULL,
+  day INTEGER NOT NULL,
+  type TEXT NOT NULL,                    -- sunny/storm/drought/...
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  kind TEXT NOT NULL,                    -- good/normal/disaster
+  "desc" TEXT NOT NULL DEFAULT ''
+);
 `)
+
+// 旧存档迁移：补充天气系统所需列
+const playerCols = db.prepare('PRAGMA table_info(player)').all().map((c) => c.name)
+if (!playerCols.includes('total_day'))
+  db.exec('ALTER TABLE player ADD COLUMN total_day INTEGER NOT NULL DEFAULT 1') // 绝对天数（单调递增，结算幂等键）
+if (!playerCols.includes('protect_days'))
+  db.exec('ALTER TABLE player ADD COLUMN protect_days INTEGER NOT NULL DEFAULT 0') // 剩余防灾防护天数

@@ -8,6 +8,10 @@
         <div class="chip lv">Lv.{{ store.player?.level ?? 1 }} ✨{{ store.player?.exp ?? 0 }}exp</div>
         <div class="chip season">{{ store.seasonLabel }}</div>
         <div class="chip day">第 {{ store.player?.day ?? 1 }} 天</div>
+        <div v-if="store.weather" class="chip weather" :class="store.weather.kind" :title="store.weather.desc">
+          {{ store.weather.icon }} {{ store.weather.name }}
+        </div>
+        <div v-if="(store.player?.protect_days ?? 0) > 0" class="chip shield">🛡️ 防护 {{ store.player.protect_days }} 天</div>
       </div>
       <div class="time-ctl">
         <button class="skip1" @click="store.nextDay(1)">⏩ +1天</button>
@@ -74,6 +78,9 @@ onMounted(async () => {
 .chip{background:#13233f;border:1px solid rgba(120,160,220,0.2);color:#aebadd;padding:5px 11px;border-radius:8px;font-size:12px;}
 .chip.gold{color:#ffd54f;}
 .chip.season{color:#90caf9;}
+.chip.weather.disaster{color:#ef9a9a;border-color:rgba(239,83,80,0.4);}
+.chip.weather.good{color:#a5d6a7;border-color:rgba(76,175,80,0.4);}
+.chip.shield{color:#80deea;border-color:rgba(0,188,212,0.4);}
 .time-ctl{display:flex;gap:6px;margin-left:auto;}
 .time-ctl button{border:none;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:#fff;font-weight:600;}
 .skip1{background:linear-gradient(135deg,#ffb300,#f57c00);}

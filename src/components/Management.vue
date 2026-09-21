@@ -95,6 +95,48 @@
     </div>
   </div>
 
+  <!-- 天气与防灾 -->
+  <div v-if="tab==='weather'" class="page">
+    <div class="pcol card">
+      <h4>🌦️ 今日天气</h4>
+      <div v-if="store.weather" class="w-now" :class="store.weather.kind">
+        <span class="w-icon">{{ store.weather.icon }}</span>
+        <div class="w-info">
+          <b>{{ store.weather.name }}
+            <span class="w-kind" :class="store.weather.kind">{{ {good:'利好',normal:'平常',disaster:'灾害'}[store.weather.kind] }}</span>
+          </b>
+          <p>{{ store.weather.desc }}</p>
+        </div>
+      </div>
+      <div class="protect-box">
+        <div class="p-line">🛡️ 防护剩余 <b class="p-days">{{ store.player?.protect_days ?? 0 }}</b> 天</div>
+        <p class="p-tip">防护期间灾害天气零损失，每过一天消耗 1 天防护。购买防护：每天 🪙10 + 防灾物资×1。</p>
+        <div class="p-btns">
+          <button class="mini" @click="store.protect(1)">防护 1 天</button>
+          <button class="mini" @click="store.protect(3)">防护 3 天</button>
+          <button class="mini" @click="store.protect(7)">防护 7 天</button>
+        </div>
+        <div class="kit-line">
+          🧰 防灾物资库存 <b>{{ kitQty }}</b> 个
+          <button class="mini green" @click="store.buyKit(1)">买 1（🪙8）</button>
+          <button class="mini green" @click="store.buyKit(5)">买 5（🪙40）</button>
+        </div>
+      </div>
+    </div>
+    <div class="pcol card">
+      <h4>📜 天气记录</h4>
+      <div v-if="!store.weatherLog.length" class="none">暂无记录</div>
+      <div class="row" v-for="w in store.weatherLog" :key="w.abs_day">
+        <span class="i">{{ w.icon }}</span>
+        <div class="m-info">
+          <b>第 {{ w.day }} 天 · {{ w.name }}</b>
+          <span class="tag" :class="'k-'+w.kind">{{ {good:'利好',normal:'平常',disaster:'灾害'}[w.kind] }}</span>
+          <span class="desc">{{ w.desc }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 建筑 -->
   <div v-if="tab==='build'" class="page">
     <div class="pcol card">
@@ -119,9 +161,12 @@ const tabs = [
   { key: 'market', label: '🏪 市场' },
   { key: 'process', label: '⚙️ 加工坊' },
   { key: 'barn', label: '🐖 畜棚' },
+  { key: 'weather', label: '🌦️ 天气' },
   { key: 'bag', label: '🎒 背包' },
   { key: 'build', label: '🏠 建筑' }
 ]
+
+const kitQty = computed(() => store.inventory.find((it) => it.item_id === 'disaster_kit')?.qty || 0)
 
 const cropIcon = computed(() => {
   const m = {}
@@ -204,4 +249,21 @@ h4 { margin:0 0 8px;color:#fff;display:flex;gap:8px;align-items:center; }
 .b-icon{font-size:22px;}
 .b-qty{color:#ffd54f;}
 .b-cat{font-size:9px;color:#6f84ab;}
+.w-now{display:flex;gap:12px;align-items:center;background:#16263f;border-radius:10px;padding:12px;border:1px solid rgba(120,160,220,0.15);}
+.w-now.disaster{border-color:rgba(239,83,80,0.45);}
+.w-now.good{border-color:rgba(76,175,80,0.45);}
+.w-icon{font-size:34px;}
+.w-info b{color:#fff;font-size:14px;display:flex;align-items:center;gap:8px;}
+.w-info p{margin:4px 0 0;font-size:11px;color:#8ba2c8;}
+.w-kind{font-size:10px;padding:2px 6px;border-radius:4px;background:#16263f;color:#6f84ab;}
+.w-kind.disaster{background:#4a1f1f;color:#ef9a9a;}
+.w-kind.good{background:#1b3a24;color:#a5d6a7;}
+.protect-box{margin-top:12px;background:#13233f;border:1px dashed rgba(128,222,234,0.35);border-radius:10px;padding:12px;}
+.p-line{color:#dbe4f3;font-size:13px;}
+.p-days{color:#80deea;font-size:16px;}
+.p-tip{font-size:11px;color:#8ba2c8;margin:6px 0 10px;}
+.p-btns{display:flex;gap:8px;flex-wrap:wrap;}
+.kit-line{margin-top:10px;font-size:12px;color:#dbe4f3;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.kit-line b{color:#ffd54f;}
+.tag.k-disaster{color:#ef9a9a;} .tag.k-good{color:#a5d6a7;} .tag.k-normal{color:#6f84ab;}
 </style>

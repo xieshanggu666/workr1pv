@@ -35,7 +35,15 @@ function draw() {
 function drawBackground() {
   const seasons = ['#cde8b8', '#dff0b0', '#ecd9a8', '#e8e6ef']
   const sky = ['#bfe3ff', '#d9f2ff', '#f5e9c8', '#dfe3f5']
-  ctx.fillStyle = sky[store.currentSeason % 4]
+  let skyColor = sky[store.currentSeason % 4]
+  // 天气影响天色
+  const w = store.weather
+  if (w) {
+    if (w.kind === 'disaster') skyColor = '#8d99b0'
+    else if (w.type === 'spring_rain') skyColor = '#a9c3d9'
+    else if (w.kind === 'good') skyColor = '#cfeaff'
+  }
+  ctx.fillStyle = skyColor
   ctx.fillRect(0, 0, W, H)
   // 草地
   ctx.fillStyle = seasons[store.currentSeason % 4]
@@ -46,6 +54,17 @@ function drawBackground() {
     const px = (i * 97 + time) % W
     const py = 60 + ((i * 53) % (H - 80))
     ctx.beginPath(); ctx.arc(px, py, 3, 0, 7); ctx.fill()
+  }
+  // 天气图标 + 灾害压暗
+  if (w) {
+    ctx.font = '26px serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.fillText(w.icon, 10, 6)
+    if (w.kind === 'disaster') {
+      ctx.fillStyle = 'rgba(30,40,70,0.18)'
+      ctx.fillRect(0, 0, W, H)
+    }
   }
 }
 
